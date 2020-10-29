@@ -1,0 +1,372 @@
+---
+title: "Logistic Regression For Binary Classification For Bank Personal-Loan Modelling"
+author: Matthew Curcio
+email: matt.curcio.ri@gmail.com
+output:
+  bookdown::pdf_document2: default
+  bookdown::html_document2: default
+---
+
+\newpage
+
+# Executive Summary
+
+The management of Thera Bank wanted to explore ways of converting its customers to personal loan customers. A previous advertising campaign was run last year to elicit loans from customers. From the 5000 customers selected for the campaign a conversion rate of over 9% success was found. One Logistic Regression (Model #2) was found to have high accuracy (96.10%) and high specificity (98.67%). and sensitivity (71.88%). 
+
+If Model #2 were provided a list of 1000 banking customers, 81 would be possible candidates with a cost savings of 92.9% compared to the first campaign. From the 81 customers approximately 85% would be converted to Personal loans, (69 customers out of 81). 
+
+The optimum customer for Personal loans was found to be;
+
+    1. One with higher education,
+    2. Who owns CD's,
+    3. Who does Not have a Securities Act.,
+    4. A customer who does Not have a Credit Card.
+    5. A customer with an income >= $65 k.
+
+# Introduction
+
+## Understanding Logistic Regression
+
+Logistic Regression is often used as a binary classifier where the dependent variable is a categorical outcome, for example; go/no-go, loan/reject-loan. Using Logistic Regression, we may also calculate the presence or absence of a product or quality when the *decision boundary* is not clear.
+
+Logistic regression may also be familiar as the *exponential growth curve* (Eq. #1) given a limited set of resources. It may be used for other biological situations such as dose-response curves, enzyme kinetic curves, median lethal dose curve (LD-50), and survival.
+
+\begin{equation}
+f(x) ~=~ \frac{M}{1 + Ae^{-r(x - x_0)}}
+\end{equation}
+
+where $M$ is the curve's maximum value, $r$ is the maximum growth rate, $x_0$ is the midpoint of the curve, and $A$ is the number of doublings to reach $M$.[^41]
+
+[^41]:https://en.wikipedia.org/wiki/Malthusian_growth_model
+
+In the specific case of *Logistic Regression for Binary Classification* (Eq. #2), $M$, $A$ and $r$ take on the value 1 and a probability between 0 and 1 is generated.
+
+\begin{equation}
+f(x) ~=~ \frac{1}{1 + e^{-(WX+b)}}
+\end{equation}
+
+```{r echo=FALSE,fig.cap="Example Logistic Curve",fig.align="center",fig.height=3.0}
+x <- seq(-6, 6, 0.05)
+y <- 1 / (1 + exp(-x))
+
+plot(x,
+     y,
+     type = "l",
+     main = "Example Logistic Curve",
+     ylim = c(-0.3, 1.3))
+abline(h = 0, col = "blue")
+abline(v = 0,
+       col = "red",
+       lty = 1,
+       lwd = 2)
+abline(h = 1, col = "blue", lty = 3)
+text(0.1, 1.1, cex = 1.15, "Decision Boundary")
+text(-3.5, 0.48, cex = 1.15, "if x < 0 then y = 0")
+text(3.5, 0.48, cex = 1.15, "if x >= 0 then y = 1")
+```
+
+Because the logistic equation is exponential, it is easier to work with the formula in terms of its *log-odds*. Where odds are the probabilities of success over failure. By using log-odds, logistic regression may be more easily expressed as a set of linear equations in terms of x. Therefore Logistic Regression is considered a *generalized linear model* (GLM).
+
+\begin{equation}
+ln \left( \frac {p}{1-p} \right) =~ \sum_i^{k} \beta_i x_i
+\end{equation}
+
+Eliminate the natural log by taking the exponent on both sides;
+
+\begin{equation}
+\frac {p}{1-p} =~ exp \left ( \sum_i^{k} \beta_i x_i \right )
+\end{equation}
+
+To evaluate the 2 models the Akaike Information Criterion [^45] will be used. With AIC smaller values indicate better fitting models.
+
+[^45]:https://en.wikipedia.org/wiki/Akaike_information_criterion
+
+\begin{equation}
+AIC ~=~ 2 K ~-~ 2ln (\widehat{L})
+\end{equation}
+
+Where $ln (\widehat{L})$ is the log-likelihood estimate, $K$ is the number of parameters.
+
+---
+
+## Thera Bank Loan Campaign
+
+The management of Thera Bank wants to explore various ways of converting its liability customers to personal loan customers yet to also retain them as depositors. A previous advertising campaign was run last year to elicit loans from customers. From the 5000 customers selected for the campaign a conversion rate of over 9% success was found. The purpose of this work is to understand if it is possible to convert a higher percentage of bank users to loan recipients.
+
+A large portion of the feature variables relate to whether bank customers have accounts with Thera Bank. Will a study of these features provide information on which ones to focus on for future loan campaign advertising?
+
+At the present time, the feature `Zip code` will not be used. It is possible to correlate home zip code and neighborhood qualities but this is for a future project.
+
+    Bank_Personal_Loan_Modeling data file can be found at:
+    https://www.kaggle.com/krantiswalke/bank-personal-loan-modelling
+
+### 13 Feature Attributes Were Collected
+
+| Abbreviation       | Attribute                              |
+| :----------------- | :------------------------------------- |
+| ID                 | Customer ID                            |
+| Age                | Age                                    |
+| Experience         | Yrs experience                         |
+| ZIP Code           | Zip code                               |
+| Family             | Family size                            |
+| Income             | Annual income,   \$k                   |
+| Mortgage           | Home mortgage,   \$k                   |
+| CCAvg              | Mean credit card spending,   \$k       |
+| Education          | Education Level   (1,2,3)              |
+| Securities Account | Customer has securities   (0,1)        |
+| CD Account         | Customer has CDs   (0,1)               |
+| Online             | Customer uses internet banking   (0,1) |
+| Credit card        | Customer uses credit card   (0,1)      |
+
+### Target - Personal Loan Conversion
+
+| Abbreviation  | Target                        |
+| :------------ | :---------------------------- |
+| Personal Loan | Customer accepted loan? (0,1) |
+
+
+# Model # 1 - Using 12 features and 1 Target variable
+
+```{r echo=FALSE}
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## R Libraries
+
+```{r message=FALSE, warning=FALSE}
+# Load Libraries
+Libraries <- c("doMC", "knitr", "readr", "tidyverse", "caret", "e1071")
+for (p in Libraries) {
+  library(p, character.only = TRUE)
+}
+```
+
+## Import Data {-}
+```{r}
+model_1 <- read_csv("Bank_Personal_Loan_Modelling.csv",
+                    col_types = cols(ID = col_skip(),
+                                     `ZIP Code` = col_skip(),
+                                     `CD Account` = col_factor(levels = c("0", "1")), 
+                                     CreditCard = col_factor(levels = c("0", "1")), 
+                                     Education = col_factor(levels = c("1", "2", "3")),
+                                     Family = col_integer(),
+                                     Online = col_factor(levels = c("0", "1")), 
+                                     `Personal Loan` = col_factor(levels = c("0", "1")), 
+                                     `Securities Account` = col_factor(levels = c("0", "1"))))
+# View(model_1)
+dim(model_1)
+```
+
+## Model 1 Generation
+
+```{r message=FALSE, warning=FALSE, cache=TRUE}
+set.seed(1000)
+index <- createDataPartition(model_1$`Personal Loan`, p = 0.8, list = FALSE)
+training_set_1 <- model_1[index,]
+
+# The `test_set_1` and `Class_test` data sets are not produced since the Logit 
+# run with 11 features was is not the final model.
+
+# The first training run is to determine if all 11 features are necessary for 
+# our final logistic regression model.
+
+set.seed(1000)
+registerDoMC(cores = 3)      # Start multi-processor mode
+start_time <- Sys.time()     # Start timer
+
+# Create model, 10X fold CV repeated 5X
+tcontrol <- trainControl(method = "repeatedcv",
+                         number = 10,
+                         repeats = 5)
+
+model_result_1 <- train(`Personal Loan` ~ .,
+                        data = training_set_1,
+                        trControl = tcontrol,
+                        method = "glm",        # glm = 'Generalized Linear Model'
+                        family = "binomial")
+
+end_time <- Sys.time()      # End timer
+end_time - start_time       # Display time
+registerDoSEQ()             # Stop multi-processor mode
+```
+
+## Summary - Model 1
+
+```{r cache=TRUE}
+summary(model_result_1)
+```
+
+## Observations - Model 1
+
+- Model contains 12 features and 1 dependent variable.
+
+- Age, Experience and Mortgage have P-values greater than 5%.
+
+| Feature    | P-value | 
+| :--------- | ------: |
+| Age        | 0.33850 |
+| Experience | 0.30859 |
+| Mortgage   | 0.83041 |
+
+- The Akaike information criterion (AIC)[^44] for model #1 is 954.51. 
+
+[^44]:https://en.wikipedia.org/wiki/Akaike_information_criterion
+
+## Decision - Model 1
+
+- Model should DROP: **Age, Experience, Mortgage, Zip code**
+
+---
+
+# Model # 2 - Uses 9 features and 1 Target variable
+
+The second model uses 9 features: 
+
+1. Income
+1. Family
+1. Average Credit Card Debt
+1. CD Account
+1. Education-2
+1. Education-3
+1. Online banking
+1. Securities Account
+1. Has Credit Card
+
+### Import Bank Loan Data {-}
+
+```{r cache=TRUE}
+model_2  <- read_csv("Bank_Personal_Loan_Modelling.csv",
+                     col_types = cols(Age = col_skip(),
+                                      ID = col_skip(),
+                                      Mortgage = col_skip(), 
+                                      Experience = col_skip(),
+                                      `ZIP Code` = col_skip(),
+                                      `CD Account` = col_factor(levels = c("0", "1")), 
+                                      CreditCard = col_factor(levels = c("0", "1")), 
+                                      Education = col_factor(levels = c("1", "2", "3")),
+                                      Family = col_integer(),
+                                      Online = col_factor(levels = c("0", "1")),
+                                      `Personal Loan` = col_factor(levels = c("0", "1")), 
+                                      `Securities Account` = col_factor(levels = c("0", "1"))))
+dim(model_2)
+```
+
+## Model 2 Generation
+
+```{r cache=TRUE}
+# Partition data into training and testing sets
+set.seed(1000)
+index <- createDataPartition(model_2$`Personal Loan`, p = 0.8, list = FALSE)
+
+training_set_2 <- model_2[ index, ]
+test_set_2     <- model_2[-index, ]
+
+Class_test_2 <- as.factor(test_set_2$`Personal Loan`)
+
+set.seed(1000)
+registerDoMC(cores = 3)           # Start multi-core
+start_time <- Sys.time()          # Start timer
+
+# Create model, 10X fold CV repeated 5X
+tControl <- trainControl(method = "repeatedcv",
+                           number = 10,
+                           repeats = 5,
+                           savePredictions = "final") # IMPORTANT: Saves predictions
+
+model_result_2 <- train(`Personal Loan` ~ .,
+                     data = training_set_2,
+                     trControl = tControl,
+                     method = "glm",
+                     family = "binomial")
+
+end_time <- Sys.time()           # End timer
+end_time - start_time            # Display time
+registerDoSEQ()                  # Stop multi-core
+```
+
+## Summary - Model 2
+
+```{r cache=TRUE}
+summary(model_result_2)
+```
+
+## Confusion Matrix - Model 2
+
+```{r cache=TRUE}
+Predicted_test_vals <- predict(model_result_2, test_set_2[, -5])
+
+confusionMatrix(Predicted_test_vals, Class_test_2, positive = "1")
+```
+
+## Observations - Model 2
+
+- All Model 2 features have (**P-values <= 0.01**).
+
+- Model 1 & 2: Akaike information criterion
+
+| Model # | Features |  AIC   |
+| :-----: | :------: | :----: |
+|    1    |    12     | 954.51 |
+|    2    |    9     | 949.95 |
+
+- Model #2 has a **lower AIC** and will be used.
+
+- Model #2 Beta-Parameters ranked in order of importance:
+
+| Feature              | Beta-Parameters |
+| :------------------- | --------------: |
+| Education-3          |        3.881894 |
+| CD Account-1         |        3.847597 |
+| Education-2          |        3.795839 |
+| Family               |        0.646500 |
+| CCAvg                |        0.157995 |
+| Income               |        0.061022 |
+| Online-1             |       -0.728666 |
+| Securities Account-1 |       -0.888602 |
+| CreditCard-1         |       -1.003529 |
+
+- The 3 most *Positive Beta-Parameters* are;
+    1. Education-3,
+    2. Ownership of Certificates of Deposit,
+    3. Education-2.
+    
+- The 3 most *Negative Beta-Parameters* are;
+    1. Ownership of Credit Card,
+    2. Ownership of Securities,
+    3. Use of Online banking.
+
+- Model 2 Statistics
+
+| Model Statistics |  Value |
+| :--------------- | -----: |
+| Accuracy         | 0.9610 |
+| Sensitivity      | 0.7188 |
+| Specificity      | 0.9867 |
+
+- Although Accuracy and Specificity are very high (> 0.95), Sensitivity is 0.7188. This means that any list of customers produced from Model 2 will have a relatively high rate of False-Positives. 
+
+## Decisions - Model 2
+
+- Model 2 had 9 parameters and should be used.
+- All Model #2 Beta-parameters had P-values < 0.01. 
+- Model 2 Accuracy (0.9610) and Specificity (0.9867) are very high .
+- Sensitivity is 0.7188, which can lead to a higher rate of False-Positives. The higher rates of False-Positives may require larger campaigns.
+
+# Conclusion
+
+- Model 2 had 9 parameters and should be used.
+- All Model #2 Beta-parameters had P-values < 0.01. 
+- Model 2 Accuracy (0.9610) and Specificity (0.9867) are very high .
+- Sensitivity is 0.7188, which can lead to a higher rate of False-Positives. The higher rates of False-Positives may require larger campaigns.
+
+If Model #2 were provided a list of 1000 banking customers 81 would be possible candidates with a cost savings of 92.9% compared to the first campaign. From the 8.1% of new customers approximately 85% would be converted (69 customers out of 81). 
+
+with 6.9% overall converted to Personal loans.
+
+- A good customer profile would be:
+    1. One **with higher education**,
+    2. who **owns CD's**,
+    3. who does **Not have a Securities Act.**,
+    4. A customer who does **Not have a Credit Card**.
+    5. AND, of course, a person with an **income >= $55 k**.
+    
